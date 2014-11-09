@@ -23,6 +23,7 @@ def print_nice_packet(bstr):
             readable_string += chr(ch)
         print(readable_string)
 
+
 class ParsingResult(list):
     """Simple container for network layers"""
     def pprint(self):
@@ -57,15 +58,18 @@ class BasePacket:
             for attr_name, item_type in self._hr_fields_:
                 value = getattr(self, attr_name)
                 if isinstance(value, collections.Iterable):
-                  value = "".join([i for i in value])
-                print("{}+ {}:{}".format(padding, attr_name, value))
+                    value = "".join([str(i) for i in value])
+                if attr_name == "protocol" and value == 6:
+                    value = "6 (TCP)"
+                print("{}+ {} : {}".format(padding, attr_name, value))
 
     # Static methods
     @staticmethod
     def factorise(cls, data):
         """Create a new packet instance, of type cls, using data as raw packet data."""
         inst = cls()
-        ctypes.memmove(ctypes.addressof(inst), data, ctypes.sizeof(cls))
+        if isinstance(inst, ctypes.BigEndianStructure):
+            ctypes.memmove(ctypes.addressof(inst), data, ctypes.sizeof(cls))
         return inst
 
     @staticmethod
@@ -73,9 +77,11 @@ class BasePacket:
         """parse a packet, beginning with an Ethernet Frame"""
         p = BasePacket.factorise(beginCls, raw_data)
         frames = [p]
+        consumed = 0
         while p.next():
             next_packet_type, last_byte = p.next()
-            p = next_packet_type.factorise(raw_data[last_byte:])
+            consumed += last_byte
+            p = next_packet_type.factorise(raw_data[consumed:])
             frames.append(p)
         return ParsingResult(frames)
 
@@ -93,6 +99,7 @@ class EthLayer(BasePacket, ctypes.BigEndianStructure):
         # next : IPv4 layer
         if self.protocol == 0x0800:
             return IPv4Layer, 14
+        return False
             
     @staticmethod
     def factorise(data):
@@ -104,15 +111,18 @@ class EthLayer(BasePacket, ctypes.BigEndianStructure):
         return inst
 
 
-class IPv4Layer(BasePacket, ctypes.BigEndianStructure):
+class IPv4Layer(BasePacket):
     """IPv4 Layer"""
-    _fields_ = (("version", ctypes.c_int),
-                ("bIHL", ctypes.c_ubyte * 4),
-                ("DSCP", ctypes.c_ubyte * 6),
-                ("ECN", ctypes.c_ubyte * 2),
-                ("length", ctypes.c_int16))
+    _fields_ = (("version", None),
+                ("IHL", None),
+                ("TTL", None),
+                ("protocol", None),
+                ("source_addr", None),
+                ("dest_addr", None))
     @staticmethod
     def factorise(data):
+        """Create a new IPv4 Layer using data.
+        """
         p = BasePacket.factorise(IPv4Layer, data)
 
         #take first 20 characters for the ip header
@@ -124,11 +134,56 @@ class IPv4Layer(BasePacket, ctypes.BigEndianStructure):
         p.IHL = version_ihl & 0xF
         p.length = p.IHL * 4
 
-        ttl = iph[5]
+        p.TTL = iph[5]
         p.protocol = iph[6]
         p.source_addr = socket.inet_ntoa(iph[8]);
-        p.destination_addr = socket.inet_ntoa(iph[9]);
-        p._hr_fields_.append(("protocol", None))
-        p._hr_fields_.append(("source_addr", None))
-        p._hr_fields_.append(("destination_addr", None))
+        p.dest_addr = socket.inet_ntoa(iph[9]);
         return p
+
+    def next(self):
+        """
+        """
+        # TCP(6)
+        if self.protocol == 6:
+            return TCPLayer, self.length
+        return False
+
+class TCPLayer(BasePacket):
+    """TCP Layer"""
+    _fields_ = (("source_port", None),
+                ("dest_port", None),
+                ("sequence", None),
+                ("acknowledgement", None),
+                ("doff_reserved", None),
+                ("header_length", None),
+                ("h_size", None),
+                ("data_size", None),
+                ("data", None))
+
+    @staticmethod
+    def factorise(data):
+        """Create a new TCP Layer using data.
+        """
+        p = BasePacket.factorise(TCPLayer, data)
+
+        tcp_header = data[0:20]
+
+        tcph = struct.unpack('!HHLLBBHHH' , tcp_header)
+
+        p.source_port = tcph[0]
+        p.dest_port = tcph[1]
+        p.sequence = tcph[2]
+        p.acknowledgement = tcph[3]
+        p.doff_reserved = tcph[4]
+        p.header_length = p.doff_reserved >> 4
+        p.h_size = p.header_length * 4
+        p.data_size = len(data) - p.h_size
+
+        #get data from the packet
+        p.data = "".join([chr(term_printable(i)) for i in data[p.h_size:]])
+        return p
+
+    def next(self):
+        """
+        """
+        return False
