@@ -2,7 +2,9 @@ import struct
 import binascii
 import socket
 import collections
+#from filters import filter_ctx, FILTERS
 
+# helpers
 def term_printable(ch):
     if (33 <= ch <= 126):
         return ch
@@ -25,6 +27,19 @@ def print_nice_packet(bstr):
             readable_string += chr(ch)
         print(readable_string)
 
+def dirty_decode_raw_data(data):
+    out = ""
+
+    for b in data:
+        if 32 <= b <= 126:
+            out += chr(b)
+        elif b == ord("\n"):
+            out += r"\n"
+        elif b == ord("\r"):
+            out += r"\r"
+        else:
+            out += "."
+    return out
 
 class ParsingResult(list):
     """Simple container for network layers"""
@@ -77,15 +92,22 @@ class BasePacket:
 
     @staticmethod
     def parse(raw_data, beginCls):
-        """parse a packet, beginning with an Ethernet Frame"""
-        p = BasePacket.factorise(beginCls, raw_data)
-        frames = [p]
+        """parse a packet.
+        params : 
+        :raw_data: packet's bytes"""
+        frames = []
         consumed = 0
-        while p.next():
-            next_packet_type, last_byte = p.next()
-            consumed += last_byte
-            p = next_packet_type.factorise(raw_data[consumed:])
-            frames.append(p)
+        with filters.filter_ctx():
+            p = BasePacket.factorise(beginCls, raw_data)
+            frames += [p]
+            #[f(frames[0]) for f in FILTERS]
+            while p.next():
+                next_packet_type, last_byte = p.next()
+                consumed += last_byte
+                p = next_packet_type.factorise(raw_data[consumed:])
+                frames.append(p)
+                [f(p) for f in filters.FILTERS]
+
         return ParsingResult(frames)
 
 class EthLayer(BasePacket):
@@ -120,8 +142,10 @@ class EthLayer(BasePacket):
 
         return inst
 
+class IPLayer(BasePacket):
+    pass
 
-class IPv4Layer(BasePacket):
+class IPv4Layer(IPLayer):
     """IPv4 Layer"""
     _fields_ = (("version", None),
                 ("IHL", None),
@@ -153,9 +177,14 @@ class IPv4Layer(BasePacket):
     def next(self):
         """
         """
+        # see RFC790 : http://tools.ietf.org/html/rfc790
         # TCP(6)
         if self.protocol == 6:
+            # TCP(6)
             return TCPLayer, self.length
+        elif self.protocol == 17:
+            # UDP(17)
+            return UDPLayer, self.length
         return False
 
 class TCPLayer(BasePacket):
@@ -190,10 +219,34 @@ class TCPLayer(BasePacket):
         p.data_size = len(data) - p.h_size
 
         #get data from the packet
-        p.data = "".join([chr(term_printable(i)) for i in data[p.h_size:]])
+        p.data = dirty_decode_raw_data(data[p.h_size:])
         return p
 
     def next(self):
         """
         """
         return False
+
+class UDPLayer(BasePacket):
+    """UDP Layer"""
+    _fields_ = (("source_port", None),
+                ("dest_port", None),
+                ("length", None),
+                ("checksum", None),
+                ("data", None))
+
+    @staticmethod
+    def factorise(data):
+        """Create a new UDP Layer using raw data.
+        """
+        p = UDPLayer()
+        udp_header = data[0:8]
+        p.source_port, p.dest_port, p.length, p.checksum = struct.unpack("!HHHH", udp_header)
+        p.data = dirty_decode_raw_data(data[8:])
+        return p
+
+    def next(self):
+        """
+        """
+        return False
+
