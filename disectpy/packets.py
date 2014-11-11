@@ -1,4 +1,6 @@
-import struct, binascii, ctypes, socket
+import struct
+import binascii
+import socket
 import collections
 
 def term_printable(ch):
@@ -61,15 +63,16 @@ class BasePacket:
                     value = "".join([str(i) for i in value])
                 if attr_name == "protocol" and value == 6:
                     value = "6 (TCP)"
+                if attr_name == "protocol" and value == 0x0800:
+                    value = "4"
+
                 print("{}+ {} : {}".format(padding, attr_name, value))
 
     # Static methods
     @staticmethod
     def factorise(cls, data):
         """Create a new packet instance, of type cls, using data as raw packet data."""
-        inst = cls()
-        if isinstance(inst, ctypes.BigEndianStructure):
-            ctypes.memmove(ctypes.addressof(inst), data, ctypes.sizeof(cls))
+        inst = cls.factorise(data)
         return inst
 
     @staticmethod
@@ -85,12 +88,11 @@ class BasePacket:
             frames.append(p)
         return ParsingResult(frames)
 
-class EthLayer(BasePacket, ctypes.BigEndianStructure):
+class EthLayer(BasePacket):
     """Ethernet Layer"""
-    _fields_ = (("src", ctypes.c_ushort * 3),
-                ("dst", ctypes.c_ushort * 3),
-                ("protocol", ctypes.c_ushort))
-    _hr_fields_ = list(_fields_)
+    _fields_ = (("src", None),
+                ("dst", None),
+                ("protocol", None))
 
     def next(self):
         """Decide what king of layer will be parsed next.
@@ -107,7 +109,15 @@ class EthLayer(BasePacket, ctypes.BigEndianStructure):
         This function assumes that the layer begin at data[0].
         """
         inst = EthLayer()
-        ctypes.memmove(ctypes.addressof(inst), data, ctypes.sizeof(inst))
+
+        header = struct.unpack('!6B6BH', data[0:14])
+        hex_src_mac = binascii.hexlify(bytes(header[0:6])).decode()
+        hex_dst_mac = binascii.hexlify(bytes(header[6:12])).decode()
+
+        inst.src = ":".join([hex_src_mac[i:i+2] for i in range(0, 12, 2)])
+        inst.dst = ":".join([hex_dst_mac[i:i+2] for i in range(0, 12, 2)])
+        inst.protocol = header[12]
+
         return inst
 
 
@@ -123,7 +133,7 @@ class IPv4Layer(BasePacket):
     def factorise(data):
         """Create a new IPv4 Layer using data.
         """
-        p = BasePacket.factorise(IPv4Layer, data)
+        p = IPv4Layer()
 
         #take first 20 characters for the ip header
         ip_header = data[0:20]
@@ -164,7 +174,7 @@ class TCPLayer(BasePacket):
     def factorise(data):
         """Create a new TCP Layer using data.
         """
-        p = BasePacket.factorise(TCPLayer, data)
+        p = TCPLayer()
 
         tcp_header = data[0:20]
 
