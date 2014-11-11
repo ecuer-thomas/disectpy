@@ -2,7 +2,8 @@ import asyncio, binascii
 import socket
 import fcntl
 import packets
-
+#from filters import FILTERS
+import parse
 ETH_P_IP = 0x0800
 
 
@@ -10,7 +11,8 @@ ETH_P_IP = 0x0800
 @asyncio.coroutine
 def parse_data(packet):
     packets.print_nice_packet(packet)
-    layers = packets.BasePacket.parse(packet, packets.EthLayer)
+    layers = parse.parse(packet, packets.EthLayer) #packets.BasePacket.parse(packet, packets.EthLayer)
+
     layers.pprint()
 
 
