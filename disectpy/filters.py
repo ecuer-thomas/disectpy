@@ -1,5 +1,3 @@
-
-
 import packets
 import binascii
 import contextlib
@@ -7,21 +5,32 @@ import contextlib
 
 
 
+
 SHOW = 0x1
 # continue dissection of underlying layers
+
 STOP = 0x10
 # abort current packet parsing
+
 CONTINUE = 0x100
 # do nothing
-FILTERS = []
+
 DIG = 0x1000
+FILTERS = []
 
 class AbortDissection(Exception):
     pass
 
 def filter_decorator(f):
     """Wrap filter execution, and translate it's return value
-    to exceptions"""
+    to exceptions.
+
+    Filters 
+    It's allow to stop dissection on arbitrairies attributes.
+    Aborting dissection allow the main coroutine to take control
+    of execution flow - and immediately begin next packet's dissection
+    (if present.)
+    """
     global FILTERS
 
     def wrap(p, *args, **kwargs):
@@ -50,18 +59,16 @@ def filter_ctx():
 #
 # filters - precision helpers
 #
+
 def on_layer(LayerType):
     def wrap_decorator(f):
         def wrap(p, *args, **kwargs):
             if isinstance(p, LayerType):
                 ret = f(p, *args, **kwargs)
                 return ret
-            return None
+            return 0
         return wrap
     return wrap_decorator
-#
-# filters
-#
 
 @filter_decorator
 @on_layer(packets.UDPLayer)
@@ -70,6 +77,7 @@ def sampleFilter(p):
     #    return SHOW ^ STOP
     #if isinstance(p, packets.TCPLayer):
     #    return SHOW ^ STOP
+
     return SHOW ^ STOP
 
 @filter_decorator
@@ -77,6 +85,7 @@ def all_packets(p):
     """Let all pass"""
     return CONTINUE
 
+# FILTERS = [all_packets]
 FILTERS = [all_packets]
 
 

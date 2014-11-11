@@ -2,7 +2,6 @@ import struct
 import binascii
 import socket
 import collections
-#from filters import filter_ctx, FILTERS
 
 # helpers
 def term_printable(ch):
@@ -28,8 +27,8 @@ def print_nice_packet(bstr):
         print(readable_string)
 
 def dirty_decode_raw_data(data):
+    """Try to decode text into a raw bytestring."""
     out = ""
-
     for b in data:
         if 32 <= b <= 126:
             out += chr(b)
@@ -51,7 +50,9 @@ class ParsingResult(list):
             padding += "\t"
         print("")
 
-class BasePacket:
+
+
+class BaseLayer:
     """Basic information about any packets.
     Ancestors of all packets.
     """
@@ -98,7 +99,7 @@ class BasePacket:
         frames = []
         consumed = 0
         with filters.filter_ctx():
-            p = BasePacket.factorise(beginCls, raw_data)
+            p = BaseLayer.factorise(beginCls, raw_data)
             frames += [p]
             #[f(frames[0]) for f in FILTERS]
             while p.next():
@@ -110,14 +111,14 @@ class BasePacket:
 
         return ParsingResult(frames)
 
-class EthLayer(BasePacket):
+class EthLayer(BaseLayer):
     """Ethernet Layer"""
     _fields_ = (("src", None),
                 ("dst", None),
                 ("protocol", None))
 
     def next(self):
-        """Decide what king of layer will be parsed next.
+        """Decide what kind of layer will be parsed next.
         Return a tuple (type, bytes_consumed) or false.
         """
         # next : IPv4 layer
@@ -142,7 +143,7 @@ class EthLayer(BasePacket):
 
         return inst
 
-class IPLayer(BasePacket):
+class IPLayer(BaseLayer):
     pass
 
 class IPv4Layer(IPLayer):
@@ -187,7 +188,7 @@ class IPv4Layer(IPLayer):
             return UDPLayer, self.length
         return False
 
-class TCPLayer(BasePacket):
+class TCPLayer(BaseLayer):
     """TCP Layer"""
     _fields_ = (("source_port", None),
                 ("dest_port", None),
@@ -227,7 +228,7 @@ class TCPLayer(BasePacket):
         """
         return False
 
-class UDPLayer(BasePacket):
+class UDPLayer(BaseLayer):
     """UDP Layer"""
     _fields_ = (("source_port", None),
                 ("dest_port", None),
@@ -250,3 +251,22 @@ class UDPLayer(BasePacket):
         """
         return False
 
+
+#
+# APP LAYER
+#
+
+class HTTPLayer(BaseLayer):
+    """UDP Layer"""
+    _fields_ = None
+
+    @staticmethod
+    def factorise(data):
+        """Create a new HTTP Layer using raw data.
+        """
+        raise NotImplemented
+
+    def next(self):
+        """
+        """
+        return False
