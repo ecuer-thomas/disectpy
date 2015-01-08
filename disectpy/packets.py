@@ -5,6 +5,7 @@ import collections
 
 # helpers
 def term_printable(ch):
+    """Return a char if printable, else, a dot."""
     if (33 <= ch <= 126):
         return ch
     return ord(".")
@@ -86,7 +87,7 @@ class BaseLayer:
 
     # Static methods
     @staticmethod
-    def factorise(cls, data):
+    def factorise(cls, data, **kwargs):
         """Create a new packet instance, of type cls, using data as raw packet data."""
         inst = cls.factorise(data)
         return inst
@@ -127,7 +128,7 @@ class EthLayer(BaseLayer):
         return False
             
     @staticmethod
-    def factorise(data):
+    def factorise(data, **kwargs):
         """Instanciate a new Eth instante, using data.
         This function assumes that the layer begin at data[0].
         """
@@ -155,7 +156,7 @@ class IPv4Layer(IPLayer):
                 ("source_addr", None),
                 ("dest_addr", None))
     @staticmethod
-    def factorise(data):
+    def factorise(data, **kwargs):
         """Create a new IPv4 Layer using data.
         """
         p = IPv4Layer()
@@ -201,9 +202,11 @@ class TCPLayer(BaseLayer):
                 ("data", None))
 
     @staticmethod
-    def factorise(data):
+    def factorise(data, continuations=None, **kwargs):
         """Create a new TCP Layer using data.
         """
+        if not continuations:
+            continuations = {}
         p = TCPLayer()
 
         tcp_header = data[0:20]
@@ -219,13 +222,17 @@ class TCPLayer(BaseLayer):
         p.h_size = p.header_length * 4
         p.data_size = len(data) - p.h_size
 
-        #get data from the packet
+        # get data from the packet
         p.data = dirty_decode_raw_data(data[p.h_size:])
         return p
 
     def next(self):
         """
         """
+
+        if len(self.data) >= 5  and self.data[0:5] in ("HTTP/", "GET/", "POST/"):
+            return HTTPLayer, self.h_size
+
         return False
 
 class UDPLayer(BaseLayer):
@@ -237,7 +244,7 @@ class UDPLayer(BaseLayer):
                 ("data", None))
 
     @staticmethod
-    def factorise(data):
+    def factorise(data, **kwargs):
         """Create a new UDP Layer using raw data.
         """
         p = UDPLayer()
@@ -256,17 +263,30 @@ class UDPLayer(BaseLayer):
 # APP LAYER
 #
 
+#  TCP header doesn't explicitely 
+#  indicate which protocol is used
+#  into the payload.
+
+
 class HTTPLayer(BaseLayer):
     """UDP Layer"""
-    _fields_ = None
+    _fields_ = []
+    # Here, mosts fields are dynamically generated
 
     @staticmethod
-    def factorise(data):
+    def factorise(data, previous, continuations, **kwargs):
         """Create a new HTTP Layer using raw data.
         """
-        raise NotImplemented
+
+        if previous.sequence - 1 in continuations:
+            pass
+        p = HTTPLayer()
+        p.payload = data
+        return p
 
     def next(self):
         """
         """
         return False
+
+

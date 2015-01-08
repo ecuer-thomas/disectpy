@@ -71,13 +71,13 @@ def on_layer(LayerType):
     return wrap_decorator
 
 @filter_decorator
-@on_layer(packets.UDPLayer)
+@on_layer(packets.TCPLayer)
 def sampleFilter(p):
     #if isinstance(p, packets.UDPLayer):
     #    return SHOW ^ STOP
     #if isinstance(p, packets.TCPLayer):
     #    return SHOW ^ STOP
-
+    
     return SHOW ^ STOP
 
 @filter_decorator
@@ -85,8 +85,6 @@ def all_packets(p):
     """Let all pass"""
     return CONTINUE
 
-# FILTERS = [all_packets]
 FILTERS = [all_packets]
-
-
+#FILTERS = [sampleFilter]
 
